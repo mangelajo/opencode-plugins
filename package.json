@@ -1,5 +1,8 @@
 {
-  "name": "opencode-auto-continue",
+  "name": "@fazaboa/opencode-auto-continue",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.1.0",
   "description": "OpenCode plugin: automatically continues responses that were cut off by the model's output limit.",
   "license": "MIT",
@@ -32,7 +35,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PedroLuisBrilhadori/opencode-auto-continue.git"
+    "url": "git+https://github.com/fazaboa/opencode-auto-continue.git"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.21",

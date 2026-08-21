@@ -35,14 +35,14 @@ it automatically injects a continuation prompt telling the model to pick up **ex
 ## Install
 
 ```bash
-npm install opencode-auto-continue
+npm install @fazaboa/opencode-auto-continue
 ```
 
 Then register it in your `opencode.json`:
 
 ```jsonc
 {
-  "plugin": ["opencode-auto-continue"]
+  "plugin": ["@fazaboa/opencode-auto-continue"]
 }
 ```
 
@@ -74,7 +74,7 @@ Or drop the source file directly into `.opencode/plugins/auto-continue.ts` in yo
 Programmatic usage:
 
 ```ts
-import { autoContinue } from "opencode-auto-continue"
+import { autoContinue } from "@fazaboa/opencode-auto-continue"
 
 export const AutoContinuePlugin = autoContinue({ maxAutoContinues: 5 })
 ```

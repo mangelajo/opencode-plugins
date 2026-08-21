@@ -1,0 +1,41 @@
+{
+  "name": "opencode-auto-continue",
+  "version": "0.1.0",
+  "description": "OpenCode plugin: automatically continues responses that were cut off by the model's output limit.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm build"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "ai",
+    "auto-continue"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PedroLuisBrilhadori/opencode-auto-continue.git"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.21",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,57 @@
+/**
+ * Configuração central do plugin opencode-plugins.
+ *
+ * Todos os limites e thresholds usados pelas features (thinking-guard,
+ * truncation) ficam aqui para facilitar ajuste sem tocar na lógica.
+ */
+
+export interface ThinkingConfig {
+  /** Token count soft limit — alerta (default: 10_000). */
+  softLimit: number
+  /** Token count hard limit — abort (default: 20_000). */
+  hardLimit: number
+  /** Número de chunks no buffer de repetição (default: 4). */
+  repetitionWindow: number
+  /** Jaccard similarity threshold para detectar loop (default: 0.6). */
+  repetitionSimilarity: number
+  /** Comparações consecutivas acima do threshold = loop (default: 3). */
+  repetitionConsecutive: number
+}
+
+export interface TruncationConfig {
+  /** Output tokens soft limit que dispara continue (default: 115_000). */
+  softLimit: number
+  /** Máx. auto-continues por turno do usuário (default: 3). */
+  maxAutoContinues: number
+}
+
+export interface GlobalConfig {
+  /** Máx. de intervenções por turno (default: 2). */
+  maxInterventionsPerTurn: number
+  /** Cooldown entre intervenções em ms (default: 5_000). */
+  cooldownMs: number
+}
+
+export interface PluginsConfig {
+  thinking: ThinkingConfig
+  truncation: TruncationConfig
+  global: GlobalConfig
+}
+
+export const config: PluginsConfig = {
+  thinking: {
+    softLimit: 10_000,
+    hardLimit: 20_000,
+    repetitionWindow: 4,
+    repetitionSimilarity: 0.6,
+    repetitionConsecutive: 3,
+  },
+  truncation: {
+    softLimit: 115_000,
+    maxAutoContinues: 3,
+  },
+  global: {
+    maxInterventionsPerTurn: 2,
+    cooldownMs: 5_000,
+  },
+}

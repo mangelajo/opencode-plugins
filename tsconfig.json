@@ -8,7 +8,12 @@
     "rootDir": "src",
     "strict": true,
     "skipLibCheck": true,
-    "noEmitOnError": true
+    "noEmitOnError": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["tests", "dist", "node_modules"]
 }

@@ -1,10 +1,10 @@
 {
-  "name": "@fazaboa/opencode-auto-continue",
+  "name": "@fazaboa/opencode-plugins",
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.1.0",
-  "description": "OpenCode plugin: automatically continues responses that were cut off by the model's output limit.",
+  "version": "0.2.0",
+  "description": "OpenCode plugins: thinking-guard (anti-loop) and truncation detection.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,7 +22,9 @@
   ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "pnpm build"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build && pnpm test"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "*"
@@ -31,14 +33,17 @@
     "opencode",
     "opencode-plugin",
     "ai",
-    "auto-continue"
+    "auto-continue",
+    "thinking-guard",
+    "truncation"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fazaboa/opencode-auto-continue.git"
+    "url": "git+https://github.com/fazaboa/opencode-plugins.git"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.21",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^3.0.0"
   }
 }

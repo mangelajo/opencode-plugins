@@ -1,8 +1,9 @@
 /**
- * opencode-plugins — plugin OpenCode modular.
+ * opencode-plugins — plugin OpenCode modular (API V2 do opencode2).
  *
- * Entry point que registra todas as features (thinking-guard, truncation)
- * com configuração centralizada.
+ * Combina thinking-guard (anti-loop de raciocínio) e truncation
+ * (auto-continue de respostas truncadas) num único plugin com uma única
+ * assinatura de eventos.
  *
  * Uso no `.opencode/plugins/`:
  * ```ts
@@ -10,43 +11,82 @@
  * ```
  */
 
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode-ai/plugin"
 import { config } from "./config"
-import { createThinkingGuardPlugin } from "./features/thinking-guard"
-import { createTruncationPlugin } from "./features/truncation"
+import {
+  createGuardCore,
+  createThinkingGuardPlugin,
+  type GuardEvent,
+} from "./features/thinking-guard"
+import {
+  createTruncationCore,
+  createTruncationPlugin,
+} from "./features/truncation"
 
 /**
- * Plugin completo com todas as features ativas.
- *
- * Combina thinking-guard e truncation num único plugin.
+ * Plugin completo: thinking-guard + truncation com config centralizada.
  */
-export default async function opencodePlugins(
-  input: PluginInput,
-): Promise<Hooks> {
-  // Cria hooks de cada feature.
-  const guardHooks = await createThinkingGuardPlugin(config.thinking)(input)
-  const truncHooks = await createTruncationPlugin(config.truncation)(input)
+export default Plugin.define({
+  id: "opencode-plugins",
+  setup: async (ctx) => {
+    const controller = new AbortController()
 
-  // Combina os hooks — ambos têm `event`.
-  return {
-    async event(input) {
-      // Executa os dois hooks em sequência.
-      if (guardHooks.event) await guardHooks.event(input)
-      if (truncHooks.event) await truncHooks.event(input)
-    },
-    async dispose() {
-      if (guardHooks.dispose) await guardHooks.dispose()
-      if (truncHooks.dispose) await truncHooks.dispose()
-    },
-  }
-}
+    const guard = createGuardCore(
+      {
+        ...config.thinking,
+        cooldownMs: config.global.cooldownMs,
+        maxInterventions: config.global.maxInterventionsPerTurn,
+        observability: config.observability,
+      },
+      {
+        interrupt: (sessionID) => ctx.session.interrupt({ sessionID }),
+        injectStop: (sessionID, text) =>
+          ctx.session.synthetic({ sessionID, text, delivery: "steer", resume: true }),
+      },
+    )
+    const truncation = createTruncationCore(config.truncation, {
+      injectContinue: (sessionID, text) =>
+        ctx.session.synthetic({ sessionID, text, delivery: "steer", resume: true }),
+    })
+
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          const ev = event as unknown as GuardEvent
+          guard.onEvent(ev)
+          await truncation.onEvent(ev)
+        }
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          console.error("[opencode-plugins] event subscription error:", err)
+        }
+      }
+    })()
+
+    return () => controller.abort()
+  },
+})
 
 // Re-exports para uso individual.
 export { createThinkingGuardPlugin, createTruncationPlugin }
+export { createGuardCore } from "./features/thinking-guard"
+export { createTruncationCore } from "./features/truncation"
 export { config } from "./config"
 export type {
   PluginsConfig,
   ThinkingConfig,
   TruncationConfig,
   GlobalConfig,
+  ObservabilityConfig,
 } from "./config"
+export {
+  createEventEmitter,
+  DEFAULT_EVENTS_PATH,
+  DEFAULT_LOKI_URL_ENV,
+} from "./observability/emitter"
+export type {
+  ThinkingGuardEvent,
+  ThinkingGuardEventType,
+  EventSink,
+  ObservabilityOptions,
+} from "./observability/emitter"

@@ -1,6 +1,17 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect } from "vitest"
 import { config } from "../src/config"
 import { createTruncationPlugin } from "../src/features/truncation"
+import {
+  createTruncationHarness,
+  emitAssistantTokens,
+  emitUserTurn,
+  emitIdle,
+} from "./helpers"
+
+/**
+ * Testes da truncation na API V2: session.usage.updated (valores absolutos)
+ * + session.idle disparam o auto-continue via session.synthetic(resume).
+ */
 
 describe("truncation config", () => {
   it("has sensible defaults", () => {
@@ -9,9 +20,12 @@ describe("truncation config", () => {
   })
 })
 
-describe("truncation feature", () => {
-  it("exports a factory function", () => {
-    expect(typeof createTruncationPlugin).toBe("function")
+describe("truncation plugin V2", () => {
+  it("default export é objeto Plugin.define", () => {
+    const plugin = createTruncationPlugin()
+    expect(typeof plugin).toBe("object")
+    expect(plugin.id).toBe("truncation")
+    expect(typeof plugin.setup).toBe("function")
   })
 
   it("accepts custom options", () => {
@@ -20,259 +34,65 @@ describe("truncation feature", () => {
       maxAutoContinues: 5,
       continueText: "Custom continue text",
     })
-    expect(typeof plugin).toBe("function")
+    expect(plugin.id).toBe("truncation")
   })
 
-  it("returns a plugin function", () => {
-    const plugin = createTruncationPlugin()
-    expect(typeof plugin).toBe("function")
+  it("continua quando output chega ao softLimit no idle", async () => {
+    const h = await createTruncationHarness({ softLimit: 115_000 })
+
+    await emitAssistantTokens(h, "sess-1", { output: 131_000, reasoning: 5_000 })
+    await emitIdle(h, "sess-1")
+
+    expect(h.synthetic).toHaveBeenCalledTimes(1)
+    const call = h.synthetic.mock.calls[0][0]
+    expect(call.sessionID).toBe("sess-1")
+    expect(call.resume).toBe(true)
+    expect(call.delivery).toBe("steer")
+    expect(call.text).toContain("Continue EXATAMENTE")
   })
 
-  it("plugin returns Hooks with event handler", async () => {
-    const plugin = createTruncationPlugin()
-    const mockInput = {
-      client: {
-        session: {
-          promptAsync: vi.fn().mockResolvedValue({}),
-          messages: vi.fn().mockResolvedValue({ data: [] }),
-        },
-      },
-      project: {},
-      directory: "/tmp",
-      worktree: "/tmp",
-      experimental_workspace: { register: vi.fn() },
-      serverUrl: new URL("http://localhost:3000"),
-      $: {},
-    } as any
+  it("não continua quando output está abaixo do softLimit", async () => {
+    const h = await createTruncationHarness({ softLimit: 115_000 })
 
-    const hooks = await plugin(mockInput)
-    expect(hooks).toBeDefined()
-    expect(typeof hooks.event).toBe("function")
+    await emitAssistantTokens(h, "sess-1", { output: 50_000 })
+    await emitIdle(h, "sess-1")
+
+    expect(h.synthetic).not.toHaveBeenCalled()
   })
 
-  it("does not trigger continue when output is below softLimit", async () => {
-    const plugin = createTruncationPlugin({ softLimit: 115_000 })
-    const promptAsync = vi.fn().mockResolvedValue({})
-
-    const mockInput = {
-      client: {
-        session: {
-          promptAsync,
-          messages: vi.fn().mockResolvedValue({ data: [] }),
-        },
-      },
-      project: {},
-      directory: "/tmp",
-      worktree: "/tmp",
-      experimental_workspace: { register: vi.fn() },
-      serverUrl: new URL("http://localhost:3000"),
-      $: {},
-    } as any
-
-    const hooks = await plugin(mockInput)
-
-    // Simula message.updated do assistant com output baixo.
-    await hooks.event!({
-      event: {
-        type: "message.updated",
-        properties: {
-          info: {
-            role: "assistant",
-            sessionID: "sess-1",
-            finish: "stop",
-            tokens: { output: 50_000, input: 1000, reasoning: 0, cache: { read: 0, write: 0 } },
-          },
-        },
-      },
-    } as any)
-
-    // Simula session.idle.
-    await hooks.event!({
-      event: {
-        type: "session.idle",
-        properties: { sessionID: "sess-1" },
-      },
-    } as any)
-
-    // Não deve ter disparado continue.
-    expect(promptAsync).not.toHaveBeenCalled()
+  it("não continua sem usage registrado no turno", async () => {
+    const h = await createTruncationHarness()
+    await emitIdle(h, "sess-1")
+    expect(h.synthetic).not.toHaveBeenCalled()
   })
 
-  it("triggers continue when finish is 'length'", async () => {
-    const plugin = createTruncationPlugin({ softLimit: 115_000 })
-    const promptAsync = vi.fn().mockResolvedValue({})
+  it("respeita maxAutoContinues por turno", async () => {
+    const h = await createTruncationHarness({ softLimit: 100, maxAutoContinues: 2 })
 
-    const mockInput = {
-      client: {
-        session: {
-          promptAsync,
-          messages: vi.fn().mockResolvedValue({ data: [] }),
-        },
-      },
-      project: {},
-      directory: "/tmp",
-      worktree: "/tmp",
-      experimental_workspace: { register: vi.fn() },
-      serverUrl: new URL("http://localhost:3000"),
-      $: {},
-    } as any
-
-    const hooks = await plugin(mockInput)
-
-    // Simula message.updated do assistant com finish=length.
-    await hooks.event!({
-      event: {
-        type: "message.updated",
-        properties: {
-          info: {
-            role: "assistant",
-            sessionID: "sess-1",
-            finish: "length",
-            tokens: { output: 131_000, input: 1000, reasoning: 0, cache: { read: 0, write: 0 } },
-          },
-        },
-      },
-    } as any)
-
-    // Simula session.idle.
-    await hooks.event!({
-      event: {
-        type: "session.idle",
-        properties: { sessionID: "sess-1" },
-      },
-    } as any)
-
-    // Deve ter disparado continue.
-    expect(promptAsync).toHaveBeenCalledTimes(1)
-  })
-
-  it("respects maxAutoContinues limit within same session", async () => {
-    const plugin = createTruncationPlugin({ maxAutoContinues: 2 })
-    const promptAsync = vi.fn().mockResolvedValue({})
-
-    const mockInput = {
-      client: {
-        session: {
-          promptAsync,
-          messages: vi.fn().mockResolvedValue({ data: [] }),
-        },
-      },
-      project: {},
-      directory: "/tmp",
-      worktree: "/tmp",
-      experimental_workspace: { register: vi.fn() },
-      serverUrl: new URL("http://localhost:3000"),
-      $: {},
-    } as any
-
-    const hooks = await plugin(mockInput)
-
-    // Simula 3 turnos na MESMA sessão com finish=length.
-    // O contador reseta a cada mensagem do usuário.
-    // Com maxAutoContinues=2, só as 2 primeiras devem disparar.
+    // Três idle seguidos com output acima do limite: só 2 continues.
     for (let i = 0; i < 3; i++) {
-      // User message → reseta contador.
-      await hooks.event!({
-        event: {
-          type: "message.updated",
-          properties: {
-            info: { role: "user", sessionID: "sess-1" },
-          },
-        },
-      } as any)
-
-      // Assistant com length.
-      await hooks.event!({
-        event: {
-          type: "message.updated",
-          properties: {
-            info: {
-              role: "assistant",
-              sessionID: "sess-1",
-              finish: "length",
-              tokens: { output: 131_000, input: 1000, reasoning: 0, cache: { read: 0, write: 0 } },
-            },
-          },
-        },
-      } as any)
-
-      // Idle.
-      await hooks.event!({
-        event: {
-          type: "session.idle",
-          properties: { sessionID: "sess-1" },
-        },
-      } as any)
+      await emitAssistantTokens(h, "sess-1", { output: 500 })
+      await emitIdle(h, "sess-1")
     }
-
-    // Deve ter disparado 3 (1 por turno, pois o contador reseta a cada user message).
-    expect(promptAsync).toHaveBeenCalledTimes(3)
+    expect(h.synthetic).toHaveBeenCalledTimes(2)
   })
 
-  it("does not exceed maxAutoContinues within a single turn", async () => {
-    // Este teste verifica que, dentro de um único turno (sem user message reset),
-    // o contador acumula. Como o plugin atual só dispara 1 continue por idle
-    // (devido à verificação no idle), este teste documenta o comportamento.
-    const plugin = createTruncationPlugin({ maxAutoContinues: 3 })
-    const promptAsync = vi.fn().mockResolvedValue({})
+  it("novo turno do usuário reseta o contador de continues", async () => {
+    const h = await createTruncationHarness({ softLimit: 100, maxAutoContinues: 1 })
 
-    const mockInput = {
-      client: {
-        session: {
-          promptAsync,
-          messages: vi.fn().mockResolvedValue({ data: [] }),
-        },
-      },
-      project: {},
-      directory: "/tmp",
-      worktree: "/tmp",
-      experimental_workspace: { register: vi.fn() },
-      serverUrl: new URL("http://localhost:3000"),
-      $: {},
-    } as any
+    await emitAssistantTokens(h, "sess-1", { output: 500 })
+    await emitIdle(h, "sess-1")
+    expect(h.synthetic).toHaveBeenCalledTimes(1)
 
-    const hooks = await plugin(mockInput)
+    // Cap atingido — sem reset não continuaria de novo.
+    await emitAssistantTokens(h, "sess-1", { output: 500 })
+    await emitIdle(h, "sess-1")
+    expect(h.synthetic).toHaveBeenCalledTimes(1)
 
-    // Simula user message inicial.
-    await hooks.event!({
-      event: {
-        type: "message.updated",
-        properties: {
-          info: { role: "user", sessionID: "sess-1" },
-        },
-      },
-    } as any)
-
-    // Primeiro turno: assistant length → idle → continue.
-    await hooks.event!({
-      event: {
-        type: "message.updated",
-        properties: {
-          info: {
-            role: "assistant",
-            sessionID: "sess-1",
-            finish: "length",
-            tokens: { output: 131_000, input: 1000, reasoning: 0, cache: { read: 0, write: 0 } },
-          },
-        },
-      },
-    } as any)
-
-    await hooks.event!({
-      event: {
-        type: "session.idle",
-        properties: { sessionID: "sess-1" },
-      },
-    } as any)
-
-    // Deve ter disparado 1 continue.
-    expect(promptAsync).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe("global config", () => {
-  it("has sensible defaults", () => {
-    expect(config.global.maxInterventionsPerTurn).toBe(2)
-    expect(config.global.cooldownMs).toBe(5_000)
+    // Novo turno → contador resetado → pode continuar.
+    await emitUserTurn(h, "sess-1")
+    await emitAssistantTokens(h, "sess-1", { output: 500 })
+    await emitIdle(h, "sess-1")
+    expect(h.synthetic).toHaveBeenCalledTimes(2)
   })
 })

@@ -48,6 +48,8 @@ export function textSimilarity(a: string, b: string): number {
  */
 export class RepetitionBuffer {
   private chunks: string[] = []
+  private streak: number[] = []
+  private maxSeen = 0
 
   constructor(private readonly windowSize: number) {}
 
@@ -64,23 +66,47 @@ export class RepetitionBuffer {
   /**
    * Retorna true se as últimas `consecutive` comparações entre chunks
    * adjacentes têm similaridade >= `threshold`.
+   *
+   * Ao retornar (loop ou não), `similarityStreak()` reflete as
+   * similaridades da última verificação e `maxSimilarity` é atualizada.
    */
   isRepeating(threshold: number, consecutive: number): boolean {
     if (this.chunks.length < 2) return false
 
+    const sims: number[] = []
     let highCount = 0
     // Compara do mais antigo para o mais recente
     for (let i = this.chunks.length - 1; i > 0; i--) {
       const sim = textSimilarity(this.chunks[i - 1], this.chunks[i])
+      sims.unshift(sim)
       if (sim >= threshold) {
         highCount++
-        if (highCount >= consecutive) return true
+        if (highCount >= consecutive) {
+          this.streak = sims
+          this.maxSeen = Math.max(this.maxSeen, ...sims)
+          return true
+        }
       } else {
         // Reseta contagem — precisa ser consecutivo
         highCount = 0
       }
     }
+    this.streak = sims
+    this.maxSeen = Math.max(this.maxSeen, ...sims)
     return false
+  }
+
+  /**
+   * Similaridades (par adjacente) da última verificação, do mais antigo
+   * para o mais recente. Última entrada = par de chunks mais novo.
+   */
+  get similarityStreak(): number[] {
+    return this.streak
+  }
+
+  /** Maior similaridade adjacente vista desde o último clear(). */
+  get maxSimilarity(): number {
+    return this.maxSeen
   }
 
   /**
@@ -88,6 +114,8 @@ export class RepetitionBuffer {
    */
   clear(): void {
     this.chunks = []
+    this.streak = []
+    this.maxSeen = 0
   }
 
   /**

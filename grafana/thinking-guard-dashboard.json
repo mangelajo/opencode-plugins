@@ -1,0 +1,185 @@
+{
+  "uid": "thinking-guard",
+  "title": "Thinking Guard — opencode-plugins",
+  "tags": ["thinking-guard", "opencode-plugins", "loki"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "modelID",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "label": "modelID", "stream": "", "type": 1, "refId": "var" },
+        "includeAll": true,
+        "allValue": ".+",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Intervenções",
+      "description": "Loops confirmados com abort+prompt no período.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({source=\"thinking-guard\", event=\"intervention\", modelID=~\"$modelID\"}[$__range]))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 10 }] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "textMode": "auto" }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Loops suprimidos",
+      "description": "Loops detectados mas bloqueados por cooldown/cap.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({source=\"thinking-guard\", event=\"loop_suppressed\", modelID=~\"$modelID\"}[$__range]))"
+        }
+      ],
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Turnos monitorados",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({source=\"thinking-guard\", event=\"turn_summary\", modelID=~\"$modelID\"}[$__range]))"
+        }
+      ],
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Taxa de turnos com intervenção",
+      "description": "Proxy de falsos positivos — baseline para calibrar thresholds.",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({source=\"thinking-guard\", event=\"intervention\", modelID=~\"$modelID\"}[$__range])) / sum(count_over_time({source=\"thinking-guard\", event=\"turn_summary\", modelID=~\"$modelID\"}[$__range]))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 1, "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.05 }, { "color": "red", "value": 0.15 }] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Eventos por tipo",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event) (count_over_time({source=\"thinking-guard\", modelID=~\"$modelID\"}[$__interval]))",
+          "legendFormat": "{{event}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Similaridade média dos disparos",
+      "description": "Jaccard dos pares de chunks que dispararam intervenção (threshold 0.6).",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg by (modelID) (avg_over_time(({source=\"thinking-guard\", event=\"intervention\", modelID=~\"$modelID\"} | json similarity | unwrap similarity)[$__interval]))",
+          "legendFormat": "{{modelID}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Tokens por turno (turn_summary)",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time(({source=\"thinking-guard\", event=\"turn_summary\", modelID=~\"$modelID\"} | json output=\"tokens.output\" | unwrap output)[$__interval])",
+          "legendFormat": "output {{modelID}}"
+        },
+        {
+          "refId": "B",
+          "expr": "avg_over_time(({source=\"thinking-guard\", event=\"turn_summary\", modelID=~\"$modelID\"} | json reasoning=\"tokens.reasoning\" | unwrap reasoning)[$__interval])",
+          "legendFormat": "reasoning {{modelID}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Intervenções por modelo",
+      "gridPos": { "x": 12, "y": 12, "w": 6, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (modelID) (count_over_time({source=\"thinking-guard\", event=\"intervention\"}[$__range]))",
+          "legendFormat": "{{modelID}}"
+        }
+      ],
+      "options": { "orientation": "horizontal", "showValue": "always", "xTickLabelRotation": 0 }
+    },
+    {
+      "id": 9,
+      "type": "piechart",
+      "title": "Supressões por motivo",
+      "gridPos": { "x": 18, "y": 12, "w": 6, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (count_over_time({source=\"thinking-guard\", event=\"loop_suppressed\"}[$__range]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "options": { "pieType": "donut", "legend": { "displayMode": "list", "placement": "right" } }
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Últimas intervenções (detalhe)",
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{source=\"thinking-guard\", event=\"intervention\", modelID=~\"$modelID\"} | json sessionID, similarity, consecutiveMatches, modelID, action | line_format \"[{{.modelID}}] sim={{.similarity}} streak={{.consecutiveMatches}} → {{.action}} ({{.sessionID}})\""
+        }
+      ],
+      "options": { "sortOrder": "Descending", "showTime": true, "wrapLogMessage": true }
+    }
+  ]
+}

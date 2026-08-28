@@ -37,6 +37,25 @@ export class SessionTokenCounter {
   }
 
   /**
+   * Define tokens acumulados do turno a partir de valores absolutos
+   * (eventos usage trazem totais, não deltas). Mantém o máximo visto.
+   */
+  set(sessionID: string, output: number, reasoning = 0): TokenCount {
+    const current = this.sessions.get(sessionID) ?? {
+      output: 0,
+      reasoning: 0,
+      steps: 0,
+    }
+    const updated: TokenCount = {
+      output: Math.max(current.output, output),
+      reasoning: Math.max(current.reasoning, reasoning),
+      steps: current.steps,
+    }
+    this.sessions.set(sessionID, updated)
+    return updated
+  }
+
+  /**
    * Retorna o contador atual da sessão (ou zeros se não existir).
    */
   get(sessionID: string): TokenCount {

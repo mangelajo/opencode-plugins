@@ -6,10 +6,10 @@
  */
 
 export interface ThinkingConfig {
-  /** Token count soft limit — alerta (default: 10_000). */
+  /** Token count soft limit — apenas log de observabilidade (default: 10_000). */
   softLimit: number
-  /** Token count hard limit — abort (default: 20_000). */
-  hardLimit: number
+  /** Tamanho em caracteres dos chunks de raciocínio para análise (default: 600). */
+  reasoningChunkSize: number
   /** Número de chunks no buffer de repetição (default: 4). */
   repetitionWindow: number
   /** Jaccard similarity threshold para detectar loop (default: 0.6). */
@@ -32,16 +32,26 @@ export interface GlobalConfig {
   cooldownMs: number
 }
 
+export interface ObservabilityConfig {
+  /** Liga/desliga toda a coleta (default: true). */
+  enabled: boolean
+  /** Caminho do JSONL de eventos — suporta `~` (default: ~/.local/share/opencode/plugins/thinking-guard/events.jsonl). */
+  jsonlPath: string
+  /** Env var de onde ler a URL do Loki para push opcional (default: THINKING_GUARD_LOKI_URL). */
+  lokiUrlEnv: string
+}
+
 export interface PluginsConfig {
   thinking: ThinkingConfig
   truncation: TruncationConfig
   global: GlobalConfig
+  observability: ObservabilityConfig
 }
 
 export const config: PluginsConfig = {
   thinking: {
     softLimit: 10_000,
-    hardLimit: 20_000,
+    reasoningChunkSize: 600,
     repetitionWindow: 4,
     repetitionSimilarity: 0.6,
     repetitionConsecutive: 3,
@@ -53,5 +63,10 @@ export const config: PluginsConfig = {
   global: {
     maxInterventionsPerTurn: 2,
     cooldownMs: 5_000,
+  },
+  observability: {
+    enabled: true,
+    jsonlPath: "~/.local/share/opencode/plugins/thinking-guard/events.jsonl",
+    lokiUrlEnv: "THINKING_GUARD_LOKI_URL",
   },
 }

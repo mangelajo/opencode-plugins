@@ -64,7 +64,8 @@ export async function createHarness(
   const eventsPath = tmpEventsPath()
   return setupWith(
     createThinkingGuardPlugin({
-      observability: { jsonlPath: eventsPath },
+      // envFilePath inexistente: testes nunca leem o ~/.config/opencode/env real.
+      observability: { jsonlPath: eventsPath, envFilePath: `${eventsPath}.env` },
       ...options,
     }) as any,
     eventsPath,

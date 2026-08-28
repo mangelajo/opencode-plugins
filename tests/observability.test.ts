@@ -30,7 +30,7 @@ async function readEvents(path: string, timeout = 2_000) {
 describe("emitter (JSONL + Loki)", () => {
   it("escreve eventos como linhas JSONL com ts", async () => {
     const path = tmpEventsPath()
-    const emitter = createEventEmitter({ jsonlPath: path })
+    const emitter = createEventEmitter({ jsonlPath: path, envFilePath: "/nonexistent/env" })
 
     emitter.emit({ event: "intervention", sessionID: "s1", action: "abort+prompt" })
 
@@ -78,11 +78,34 @@ describe("emitter (JSONL + Loki)", () => {
     vi.stubGlobal("fetch", fetchMock)
     process.env[DEFAULT_LOKI_URL_ENV] = "http://loki.local:3100"
 
-    const emitter = createEventEmitter({ jsonlPath: tmpEventsPath() })
+    const emitter = createEventEmitter({
+      jsonlPath: tmpEventsPath(),
+      envFilePath: "/nonexistent/env",
+    })
     emitter.emit({ event: "turn_summary", sessionID: "s1" })
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(fetchMock.mock.calls[0][0]).toContain("http://loki.local:3100")
+  })
+
+  it("faz fallback para o arquivo env quando o processo não tem a env", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal("fetch", fetchMock)
+    delete process.env[DEFAULT_LOKI_URL_ENV]
+
+    const envFile = join(mkdtempSync(join(tmpdir(), "tg-env-")), "env")
+    const { writeFileSync } = await import("node:fs")
+    writeFileSync(envFile, `GRAFANA_SA_TOKEN=x\n${DEFAULT_LOKI_URL_ENV}=http://file-loki:3100\n`)
+
+    const emitter = createEventEmitter({ jsonlPath: tmpEventsPath(), envFilePath: envFile })
+    emitter.emit({ event: "turn_summary", sessionID: "s1" })
+
+    // Dá tempo da leitura assíncrona do arquivo resolver.
+    await new Promise((r) => setTimeout(r, 50))
+    emitter.emit({ event: "turn_summary", sessionID: "s1" })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(fetchMock.mock.calls[0][0]).toContain("http://file-loki:3100/loki/api/v1/push")
   })
 
   it("nunca lança quando o Loki rejeita (fail-silent)", async () => {
@@ -99,7 +122,10 @@ describe("emitter (JSONL + Loki)", () => {
   it("nunca lança quando o caminho do JSONL é inválido", () => {
     // dirname aponta para um arquivo comum → mkdir falha → engolido.
     const notADir = tmpEventsPath()
-    const emitter = createEventEmitter({ jsonlPath: join(notADir, "x", "events.jsonl") })
+    const emitter = createEventEmitter({
+      jsonlPath: join(notADir, "x", "events.jsonl"),
+      envFilePath: "/nonexistent/env",
+    })
     expect(() =>
       emitter.emit({ event: "intervention", sessionID: "s1" }),
     ).not.toThrow()

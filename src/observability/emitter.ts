@@ -11,7 +11,7 @@
  *   setado, faz POST best-effort em `/loki/api/v1/push`.
  */
 
-import { appendFile, mkdir } from "node:fs/promises"
+import { appendFile, mkdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -19,6 +19,12 @@ export const DEFAULT_EVENTS_PATH =
   "~/.local/share/opencode/plugins/thinking-guard/events.jsonl"
 
 export const DEFAULT_LOKI_URL_ENV = "THINKING_GUARD_LOKI_URL"
+
+/**
+ * Arquivo de env do opencode — fallback quando o server é spawnado por
+ * supervisor sem herdar o environment do shell.
+ */
+const OPENCODE_ENV_PATH = "~/.config/opencode/env"
 
 export type ThinkingGuardEventType =
   | "intervention"
@@ -63,6 +69,8 @@ export interface ObservabilityOptions {
   lokiUrl?: string
   /** Env var de onde ler a URL do Loki (default: THINKING_GUARD_LOKI_URL). */
   lokiUrlEnv?: string
+  /** Arquivo env de fallback (default: ~/.config/opencode/env). */
+  envFilePath?: string
 }
 
 /** Expande `~/` para o home do usuário. */
@@ -70,6 +78,37 @@ export function expandHome(path: string): string {
   if (path === "~") return homedir()
   if (path.startsWith("~/")) return join(homedir(), path.slice(2))
   return path
+}
+
+/** Lê KEY=VALUE de um arquivo env (ignora comentários), sem throw. */
+async function readEnvFileValue(path: string, key: string): Promise<string | undefined> {
+  try {
+    const content = await readFile(path, "utf-8")
+    for (const line of content.split("\n")) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
+      if (match && match[1] === key) {
+        return match[2].replace(/^["']|["']$/g, "") || undefined
+      }
+    }
+  } catch {}
+  return undefined
+}
+
+/**
+ * Resolve a URL do Loki: env do processo → ~/.config/opencode/env.
+ * O server do opencode costuma ser spawnado por supervisor sem o env do
+ * shell, então o arquivo é o fallback confiável.
+ */
+export async function resolveLokiUrl(
+  envKey: string,
+  explicit?: string,
+): Promise<string | undefined> {
+  const fromEnv = (explicit ?? process.env[envKey])?.replace(/\/+$/, "")
+  if (fromEnv) return fromEnv
+  return (await readEnvFileValue(
+    expandHome(OPENCODE_ENV_PATH),
+    envKey,
+  ))?.replace(/\/+$/, "")
 }
 
 /**
@@ -81,10 +120,21 @@ export function createEventEmitter(
   if (options.enabled === false) return { emit: () => {} }
 
   const jsonlPath = expandHome(options.jsonlPath ?? DEFAULT_EVENTS_PATH)
-  const lokiUrl = (
-    options.lokiUrl ??
-    process.env[options.lokiUrlEnv ?? DEFAULT_LOKI_URL_ENV]
-  )?.replace(/\/+$/, "")
+  const envKey = options.lokiUrlEnv ?? DEFAULT_LOKI_URL_ENV
+  const envFile = expandHome(options.envFilePath ?? OPENCODE_ENV_PATH)
+
+  let lokiUrl: string | undefined = options.lokiUrl?.replace(/\/+$/, "")
+  if (!lokiUrl && process.env[envKey]) {
+    lokiUrl = process.env[envKey].replace(/\/+$/, "")
+  }
+  if (!lokiUrl) {
+    // Fallback assíncrono: server spawnado por supervisor não herda env.
+    void readEnvFileValue(envFile, envKey).then(
+      (v) => {
+        lokiUrl = v?.replace(/\/+$/, "")
+      },
+    )
+  }
 
   let dirReady: Promise<unknown> | null = null
   const ensureDir = () => {
@@ -103,7 +153,7 @@ export function createEventEmitter(
         .then(() => appendFile(jsonlPath, `${line}\n`))
         .catch(() => {})
 
-      if (lokiUrl) void pushToLoki(lokiUrl, record).catch(() => {})
+      if (lokiUrl) void pushToLoki(lokiUrl, record)
     },
   }
 }
